@@ -14,7 +14,10 @@ from itertools import product
 import pandas as pd
 import logging
 
-width = os.get_terminal_size().columns
+try:
+    width = os.get_terminal_size().columns
+except OSError:
+    width = 100
 
 cluster_info = None
 

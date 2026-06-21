@@ -150,7 +150,7 @@ def analyze_model(use_case, classes_filter, npkts, n_tree, max_leaf, feats, clas
     test_flow_IDs = test_data['Flow ID'].to_list()
 
     train_samples = train_data[feats]
-    train_labels = train_data['Label_NEW'].replace(classes, range(len(classes)))
+    train_labels = train_data['Label_NEW'].replace(classes, range(len(classes))).astype(int)
 
     test_samples = test_data[feats]
     test_labels = test_data['Label_NEW'].replace(classes, range(len(classes)))

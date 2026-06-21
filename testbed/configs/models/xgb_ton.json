@@ -1,0 +1,6 @@
+{
+    "m1": { "p4": "xgb_iot_m1", "files": ["xgb_ton/cluster2_T3_L41_F4_N4.sav"], "previous": null },
+    "m2": { "p4": "xgb_iot_m2", "files": ["xgb_ton/cluster3_T3_L41_F6_N4.sav"], "previous": "m1" },
+    "m3": { "p4": "xgb_iot_m3", "files": ["xgb_ton/cluster1_T1_L129_F4_N4.sav"], "previous": "m2" },
+    "m4": { "p4": "xgb_iot_m4", "files": ["xgb_ton/cluster0_T3_L85_F9_N4.sav"], "previous": "m3" }
+}

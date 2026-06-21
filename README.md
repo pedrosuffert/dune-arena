@@ -1,67 +1,171 @@
-# DUNE: Distributed Inference in the User Plane
+# dune-arena
 
-This repository contains the source code of **DUNE**, a novel framework for distributed ML inference in the user plane.
+A fork of [DUNE](https://github.com/nds-group/DUNE) (IEEE INFOCOM 2025) that makes the
+choice of Stage-1 tree ensemble *propagate to the deployed P4 sub-models*, and uses that
+to fairly compare four ensembles for volumetric DoS detection on TON-IoT.
 
-- 📄 **[PDF pre-print of DUNE](https://dspace.networks.imdea.org/handle/20.500.12761/1883)**, published in IEEE INFOCOM 2025.
-- 🏆 **[DUNE received INFOCOM 2025 Best paper award](https://infocom2025.ieee-infocom.org/awards#:~:text=DUNE%3A%20Distributed%20Inference%20in%20the%20User%20Plane)**
+DUNE splits one tree classifier into hardware-compliant sub-models distributed across
+programmable P4 switches. Its pipeline runs six stages: (1) train an unconstrained model,
+(2) score per-class feature importance, (3) partition classes with a Set-Partitioning
+(SPP) solver, (4) train hardware-compliant Random-Forest sub-models per cluster,
+(5) sequence the clusters (TSP), (6) compile and deploy to P4/BMv2.
 
-## Abstract
-The deployment of Machine Learning (ML) models in the user plane, enabling line-rate in-network inference, significantly reduces latency and improves the scalability of cases like traffic monitoring. Yet, integrating ML models into programmable network devices requires meeting stringent constraints in terms of memory resources and computing capabilities.
+## What this fork changes
 
-Previous solutions have focused on implementing monolithic ML models within individual programmable network devices, which are limited by hardware constraints. In this paper, we propose `DUNE`, a novel framework that realizes for the first time user plane inference distributed across multiple programmable network devices. `DUNE` adopts fully automated approaches to (i) break large ML models into simpler sub-models that preserve inference accuracy while minimizing resource usage, and (ii) design the sub-models and their sequencing to enable an efficient distributed execution of joint packet- and flow-level inference.
+**Model-agnostic importance.** Released DUNE scores importance with PCFI, which is tied to
+one model. This fork swaps in **TreeSHAP** so four ensembles compete on equal footing as the
+Stage-1 model: **Random Forest, XGBoost, LightGBM, CatBoost**.
 
-## Tutorial
-A comprehensive tutorial is available as a Jupyter notebook (`dune_tutorial.ipynb`). We strongly encourage users to explore this notebook as a starting point for getting acquainted with the DUNE framework and its pipeline steps.
+**The propagation fix (the core contribution).** In released DUNE, Stage 4 re-derives each
+cluster's features from a *fresh* Random Forest's Gini importance over all features, throwing
+away the Stage-2 importance. The Stage-1 model therefore reaches hardware only through the
+class partition; its feature preferences barely propagate. This fork makes Stage 4 rank each
+cluster's features by that cluster's **TreeSHAP importance**, restricted to the BMv2-deployable
+features. The Stage-1 choice now flows all the way to the deployed sub-models: their features,
+tree configurations, and sequence. The fix lives in
+`cluster_analysis/src/model_analysis/modelAnalyzer.py` (`treeshap_feature_sets`, `DEPLOYABLE`).
 
-## EXTENSION: DUNE in Software Switches (bmv2) and Arbitrary Topologies
-**`dune-bmv2/` (Submodule)**: This directory is a Git submodule corresponding to a software switch (bmv2) implementation of DUNE that enables reproducing the data-plane execution of DUNE in Mininet. It includes P4 programs, Mininet scripts, and instructions for setting up the environment and running the experiments. User without Hardware switches can use this submodule to validate the DUNE framework in a software-based environment.
+**Supporting fixes.**
+- Per-class normalization of the TreeSHAP matrix, matching the contract PCFI's SPP gain assumes.
+- Flow-grouped Stage-1 train/validation split, so no flow leaks across the split.
+- Brute-force TSP for Stage 5, dropping the Gurobi dependency.
+- A BMv2 P4 source generator with generalized n-class majority voting.
 
-## Repository Structure & Pipeline Workflow
-DUNE is designed as a linear pipeline. Each step in the workflow is separated into its own directory and depends on the output of the previous step. Detailed instructions and guidelines for running each step can be found in their respective `README.md` files.
+## Results (offline, Stages 1–5)
 
-1. **`data_generation/`**  
-   Transforms and prepares the data from the source datasets for training and evaluating the ML models, including ground truth CSV files and PCAPs.
-2. **`unconstrained_model_analysis/`**  
-   Train an unconstrained ML model and extract the relationships between input features and output variables (per-class feature importance).
-3. **`model_partitioning/`**  
-   Break down the original inference task into a series of smaller sub-tasks (clusters) that jointly achieve the same goal.
-4. **`cluster_analysis/`**  
-   Evaluate the F1 Score of a given solution.
-5. **`model_sequencing/`**  
-   Order the ML sub-models to optimize inference performance.
-6. **`dune-tofino/`**  
-   Implementation of the UNSW, and ToN-IoT use cases for the Intel Tofino P4 target.  
-   *Note: The generation of this code is target- and use-case specific; thus, it has not been automated.*
+Flow-weighted macro-F1 over the seven classes, DUNE TCAM cost, and the Stage-5 cluster
+sequence. Higher F1 is better; lower TCAM is cheaper.
 
-## Dependencies & Installation
+| Stage-1 model | macro-F1 | TCAM | sequence | class partition |
+|---------------|---------:|-----:|----------|-----------------|
+| RF       | 89.91 | 10.76 | `[2,3,1,0]` | `{ddos} {injection} {dos,normal,password,scanning} {xss}` |
+| LightGBM | 89.60 |  8.33 | `[3,2,1,0]` | `{ddos} {injection} {dos,normal,password,scanning} {xss}` |
+| CatBoost | 89.50 | 10.76 | `[2,1,3,0]` | `{ddos} {injection} {dos,normal,password,scanning} {xss}` |
+| XGBoost  | 89.19 |  5.56 | `[2,1,3,0]` | `{dos} {normal} {scanning} {ddos,injection,password,xss}` |
 
-- **Python 3.x**: Required for the ML pipeline steps.
-- **Python Dependencies**: Dependencies are isolated per directory. Before running the scripts for a specific pipeline step, install its dependencies:
-  ```bash
-  pip install -r <directory_name>/requirements.txt
-  ```
-- **BMv2 & Mininet**: Required for the data-plane execution in the `dune-bmv2` submodule. Please refer to `dune-bmv2/README.md` for specific P4 compilation and Mininet setup instructions.
+RF, LightGBM, and CatBoost reach the *same* class partition yet deploy *different* sub-models:
+each ranks features by its own TreeSHAP and lands on different tree configurations. That
+divergence is the propagation fix working. XGBoost is the outlier: it does not isolate `ddos`,
+buys the cheapest TCAM, and scores the lowest macro-F1. A model-dependent accuracy/cost
+tradeoff now reaches hardware, which the released pipeline could not express.
 
-## Prerequisites & External Files
+**In-network (real BMv2 fattree, 7 classes, 3258 flows).** Each pipeline was deployed and
+scored end to end. The Stage-1 choice propagates: the four deploy distinctly and score
+distinctly.
 
-To reproduce the experiments in the paper, you must obtain the datasets (such as the ToN_IoT datasets or equivalent traffic traces) and place them in the locations expected by the pipeline scripts.
+| Stage-1 model | offline macro-F1 | in-network macro-F1 | gap |
+|---------------|-----------------:|--------------------:|----:|
+| RF       | 89.91 | 89.66 | -0.25% |
+| LightGBM | 89.60 | 89.24 | -0.36% |
+| XGBoost  | 89.19 | 88.59 | -0.60% |
+| CatBoost | 89.50 | 87.77 | -1.73% |
 
-1. **Obtain Data:** Download the appropriate ground truth CSV files and PCAPs as detailed in the paper and the individual subdirectory `README.md` guidelines.
-2. **Placement:** Ensure these files are placed inside the `data/` or `pcaps/` directories as requested by each step's instructions before starting the execution.
+In-network tracks offline within 1.8% for every model, so the generated P4 is faithful to the
+trained sub-models. CatBoost degrades most on hardware; the in-network ranking is
+RF > LightGBM > XGBoost > CatBoost.
 
-## Citation
-If you use this code or framework in your research, please kindly cite our INFOCOM 2025 paper:
+## Repository layout
 
-```bibtex
-@INPROCEEDINGS{11044678,
-  author={Bütün, Beyza and De Andres Hernandez, David and Gucciardo, Michele and Fiore, Marco},
-  booktitle={IEEE INFOCOM 2025 - IEEE Conference on Computer Communications}, 
-  title={DUNE: Distributed Inference in the User Plane}, 
-  year={2025},
-  volume={},
-  number={},
-  pages={1-10},
-  keywords={Sequential analysis;Accuracy;Computational modeling;Scalability;Memory management;Machine learning;Hardware;Delays;Resource management;Monitoring},
-  doi={10.1109/INFOCOM55648.2025.11044678}
-}
 ```
+dune-arena/
+├── treeshap/                 # contribution layer: the pipeline glue
+│   ├── paths.py              #   single path source; env DUNE_FAIR_DATA / DUNE_FAIR_GT override
+│   ├── build_label_map.py    #   Flow ID -> Label map from TON-IoT GroundTruth CSVs
+│   ├── build_datasets.py     #   train_7class.csv + Ethernet-wrapped test pcap
+│   ├── patch_normal_test.py  #   add the 'normal' (background) class to the test set
+│   ├── prep_stage4.py        #   build DUNE Stage-4 inputs at N=4 clusters
+│   ├── train_models.py       #   Stage 1: train the 4 ensembles + TreeSHAP importance
+│   ├── build_importance.py   #   Stage 2: normalized per-class TreeSHAP matrices
+│   ├── run_spp.py            #   Stage 3: SPP class partition (4 clusters)
+│   ├── stage45.py            #   drives Stage 4 (grid) + Stage 5 (TSP) for all models
+│   ├── train_submodels.py    #   Stage 6a: train + save per-cluster RF sub-models
+│   ├── generate_p4.py        #   Stage 6b: BMv2 P4 generator (n-class majority voting)
+│   └── collate.py            #   one results view -> output/results_comparison.csv
+├── cluster_analysis/         # DUNE Stage 4 (modelAnalyzer.py holds the propagation fix)
+├── data_generation/          # DUNE Stage 0: pcap -> flow features (tshark)
+├── model_partitioning/SPP/   # DUNE Stage 3: SPP solver
+├── model_sequencing/         # DUNE Stage 5: TSP sequencing
+├── unconstrained_model_analysis/pcfi/   # DUNE's original PCFI, kept for reference
+├── testbed/                  # vendored BMv2/Mininet testbed, lab-only (see testbed/PROVENANCE.md)
+├── pyproject.toml            # uv project: offline deps
+└── uv.lock
+```
+
+The DUNE stage directories are kept intact; only `modelAnalyzer.py` carries the fix. PCFI
+stays under `unconstrained_model_analysis/` to document what TreeSHAP replaced. The testbed in
+`testbed/` is vendored from `nds-group/DUNE-bmv2` with our fixes; see `testbed/PROVENANCE.md`.
+
+## Setup
+
+Packaging uses [uv](https://docs.astral.sh/uv/). Python >= 3.10.
+
+```bash
+uv sync                       # build the env from pyproject.toml + uv.lock
+```
+
+Run any glue script through the environment:
+
+```bash
+uv run python treeshap/train_models.py
+```
+
+### Data
+
+The dataset is TON-IoT: raw pcaps plus the official `GroundTruth_Network` CSVs
+(Alsaedi et al., *IEEE Access* 2020). Point `paths.py` at it one of two ways:
+
+- set `DUNE_FAIR_DATA` to the data root (and `DUNE_FAIR_GT` to the ground-truth CSV dir), or
+- place the data under `./data`.
+
+Stage 0 (`data_generation`, tshark) needs the raw pcaps. The offline pipeline from
+`train_7class.csv` onward needs only the ML dependencies.
+
+## Running the offline pipeline
+
+Each step writes artifacts the next step reads, so run them in order:
+
+```bash
+uv run python treeshap/build_label_map.py     # Flow ID -> Label
+#   (run DUNE data_generation per pcap set to produce flow features)
+uv run python treeshap/build_datasets.py      # train_7class.csv + test pcap
+uv run python treeshap/patch_normal_test.py   # add 'normal' to the test set
+uv run python treeshap/prep_stage4.py         # Stage-4 inputs
+uv run python treeshap/train_models.py        # Stage 1 + TreeSHAP
+uv run python treeshap/build_importance.py    # Stage 2 importance matrices
+uv run python treeshap/run_spp.py             # Stage 3 partition
+uv run python treeshap/stage45.py             # Stage 4 grid + Stage 5 TSP
+uv run python treeshap/collate.py             # results_comparison.csv
+```
+
+`collate.py` reads only persisted artifacts and prints the comparison table above.
+
+## Stage 6: in-network deploy (lab only)
+
+Stage 6 runs on a real BMv2 lab box and is **not pip-installable**. It needs the
+[p4-guide](https://github.com/jafingerhut/p4-guide) toolchain: `simple_switch_grpc`,
+Mininet, and `p4runtime_sh`.
+
+```bash
+uv run python treeshap/train_submodels.py rf                       # sub-models for one model
+uv run python treeshap/generate_p4.py --sav <F.sav> --out <X.p4> \
+    --model-id <N> --offset <K> --classlist "<c1,c2,...>"          # emit the P4 program
+```
+
+The `testbed/` then deploys the generated P4 and scores it against the test pcap.
+
+## Honest caveats
+
+- **TON-IoT port bias.** The dataset is testbed traffic; web-attack classes (xss, injection,
+  password) concentrate on the victim's service ports, so port features inflate their
+  separability beyond what a production capture would give.
+- **"Normal" is not a clean benign capture.** It is background traffic absent from the attack
+  ground truth, recovered from the DoS captures, not an independent benign trace.
+- **Deployable feature set.** Stage 4 restricts features to the 19 BMv2-deployable ones. No
+  division-based features (e.g. Flow IAT Mean, Packet Length Mean) reach the switch.
+- **Single seed.** Every result above comes from one random seed; no variance is reported.
+
+## Citing
+
+- DUNE — Akem et al., *DUNE: Distributing Inference in the Network*, IEEE INFOCOM 2025.
+  Source: https://github.com/nds-group/DUNE
+- TON-IoT — Alsaedi et al., *TON_IoT Telemetry Dataset*, IEEE Access, 2020.

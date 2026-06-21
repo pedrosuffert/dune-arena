@@ -139,12 +139,9 @@ def label_packet_data(packet_data: pd.DataFrame, config: DataGenerationConfig):
         packet_data = packet_data.reset_index(drop=True)
 
     if config.use_case == "TON-IOT":
-        flow_list = label_data['Flow ID'].to_list()
-        # Keep only the target traffic
-        packet_data = packet_data[packet_data['Flow ID'].isin(flow_list)]
         flow_id_label_dict = label_data.set_index("Flow ID")["Label"].to_dict()
-        # Map the labels from flow_id_label_dict to packet_data based on the "Flow ID" column
-        packet_data["Label"] = packet_data["Flow ID"].map(flow_id_label_dict)
+        # Map attack labels; flows absent from the ground truth are benign -> "normal"
+        packet_data["Label"] = packet_data["Flow ID"].map(flow_id_label_dict).fillna("normal")
 
     return packet_data
 
@@ -173,7 +170,7 @@ def process_pcap_to_csv(pcap_file, output_file):
         "-e", "frame.time_relative", "-e", "ip.src", "-e", "ip.dst",
         "-e", "tcp.srcport", "-e", "tcp.dstport", "-e", "ip.len",
         "-e", "tcp.flags.syn", "-e", "tcp.flags.ack", "-e", "tcp.flags.push",
-        "-e", "tcp.flags.fin", "-e", "tcp.flags.reset", "-e", "tcp.flags.ecn",
+        "-e", "tcp.flags.fin", "-e", "tcp.flags.reset", "-e", "tcp.flags.ece",
         "-e", "ip.proto", "-e", "udp.srcport", "-e", "udp.dstport",
         "-e", "eth.src", "-e", "eth.dst", "-e", "ip.hdr_len", "-e", "ip.tos",
         "-e", "ip.ttl", "-e", "tcp.window_size_value", "-e", "tcp.hdr_len", "-e", "udp.length",
@@ -182,6 +179,13 @@ def process_pcap_to_csv(pcap_file, output_file):
 
     with open(output_file, "w") as out_file:
         subprocess.run(command, stdout=out_file, check=True)
+    # tshark >=4 quirks: tcp.flags.ecn was renamed to tcp.flags.ece (same ECN-Echo
+    # flag) and boolean flag fields print as True/False instead of 1/0. Rename the
+    # header back and coerce booleans to 1/0 so downstream Int64 parsing works.
+    subprocess.run(
+        ["sed", "-i", "-e", "1s/tcp\\.flags\\.ece/tcp.flags.ecn/",
+         "-e", "s/True/1/g", "-e", "s/False/0/g", output_file],
+        check=True)
 
 def get_flow_length(data_config: DataGenerationConfig):
     """

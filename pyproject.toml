@@ -1,0 +1,22 @@
+[project]
+name = "dune-arena"
+version = "0.1.0"
+description = "DUNE with fair (TreeSHAP) per-class importance that propagates to the deployed sub-models."
+requires-python = ">=3.10"
+# Offline pipeline (Stages 1-5) + dataset/P4 generation. The bmv2/Mininet deploy
+# (Stage 6) needs the p4-guide lab toolchain (p4runtime_sh, simple_switch) and is
+# NOT pip-installable - see README.
+dependencies = [
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "xgboost",
+    "lightgbm",
+    "catboost",
+    "shap",
+    "pulp",
+    "matplotlib",
+    "tabulate",
+    "tqdm",
+    "scapy",
+]

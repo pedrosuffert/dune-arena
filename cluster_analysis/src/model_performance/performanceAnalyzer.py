@@ -21,12 +21,19 @@ feats_sizes = [16, 16, 8, 1, 1, 1, 1, 1, 1,1, 8, 16, 16, 16, 4, 16, 16, 16, 16,1
 
 available_TCAM_table = 24 * 12
 
+def _strip_np(val):
+    import re as _re
+    return _re.sub(r"np\.(?:float64|float32|int64|int32|bool_)\(([^()]*)\)", r"\1", val)
+
 def literal_converter(val):
-    # replace first val with '' or some other null identifier if required
-    return val if val == '' else literal_eval(val)
+    return val if val == '' else literal_eval(_strip_np(val))
 
 def convert_str_to_dict(field_value):
-    return json.loads(field_value.replace("\'", "\""))
+    import re as _re
+    s = _strip_np(field_value).replace("'", '"')
+    s = _re.sub(r"\bnan\b", "NaN", s)
+    s = _re.sub(r"\binf\b", "Infinity", s)
+    return json.loads(s)
 
 
 def calculate_tcam_for_codetables(models_df):

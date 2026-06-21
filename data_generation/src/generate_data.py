@@ -28,7 +28,7 @@ def __run_data_generation(file: str, config: DataGenerationConfig):
     hybrid_results_dir = f"{config.data_path}/hybrid_data"
 
     process_pcap_to_csv(pcap_file_path, tshark_file_path)
-    packet_data = parse_tshark_csv_to_dataframe(tshark_file_path)
+    packet_data = parse_tshark_csv_to_dataframe(tshark_file_path, config)
 
     labeled_packet_data = label_packet_data(packet_data, config)
     labeled_packet_data.to_csv(f"{data_path}/csv_files/{pcap_file_name}.csv", index=False)
@@ -43,10 +43,10 @@ def __run_data_generation(file: str, config: DataGenerationConfig):
                       'RST Flag Count', 'ECE Flag Count', 'Label', 'File']
 
     for n in config.inference_points_list:
-        packet_data = generate_hybrid_data(packet_data, csv_file_name, n)
+        hybrid_data = generate_hybrid_data(labeled_packet_data.copy(), csv_file_name, n)
 
         filename_out = f"{hybrid_results_dir}/{config.use_case}_{config.data_type}_{pcap_file_name}_N_{n}.csv"
-        packet_data.to_csv(filename_out, columns=output_columns, index=False)
+        hybrid_data.to_csv(filename_out, columns=output_columns, index=False)
 
 
 def main():

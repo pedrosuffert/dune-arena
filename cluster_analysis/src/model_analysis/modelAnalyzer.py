@@ -12,6 +12,20 @@ from itertools import compress
 
 import warnings
 
+# --- Feature-selection regime (documented in the thesis) -------------------------------
+# FAIR_FEATURES = True  -> our fix: Stage 4 ranks features by the cluster's TreeSHAP over the
+#                          BMv2-deployable set, so the Stage-1 model (RF/XGB/LightGBM/CatBoost)
+#                          PROPAGATES to the deployed sub-models -> the four models deploy
+#                          differently, even when they share a class partition.
+# FAIR_FEATURES = False -> DUNE's released behaviour: re-derive features with a fresh
+#                          RandomForest Gini, ignoring the Stage-2 importance. The Stage-1
+#                          model then reaches hardware ONLY through the class partition, so
+#                          models with the same partition deploy IDENTICALLY -- "the models
+#                          behave equally" bug this work documents and fixes.
+# Flip the constant, or set env DUNE_ARENA_FAIR_FEATURES=0, to reproduce the bug offline.
+FAIR_FEATURES = os.environ.get("DUNE_ARENA_FAIR_FEATURES", "1") == "1"
+# ---------------------------------------------------------------------------------------
+
 def assign_sample_nature(row):
     """Aux function to check the conditions and assign values"""
     if (row["Min Packet Length"] == -1 and
@@ -73,6 +87,11 @@ class ModelAnalyzer(ABC):
         if cluster_data_file_path is not None:
             self.cluster_data_file_path = cluster_data_file_path
             self.cluster_flag = True
+            # TreeSHAP propagation fix: load the Stage-1 model's per-class importance
+            # (importance_weights.csv sits next to the SPP solution) so Stage 4 selects
+            # features by the unconstrained model's TreeSHAP, not a fresh RF's Gini.
+            _imp = os.path.join(os.path.dirname(cluster_data_file_path), "importance_weights.csv")
+            self.importance_df = pd.read_csv(_imp) if os.path.exists(_imp) else None
         else:
             self.cluster_flag = False
 
@@ -263,8 +282,13 @@ class ModelAnalyzer(ABC):
                 for depth in self.max_depth_list:
                     for leaf in self.max_leaves_list:
                         # get feature orders to use
-                        m_feats = get_feature_importance_sets(n_tree, x_train, y_train, weight_of_samples,
-                                                              max_leaf=leaf, max_depth=depth)
+                        # FAIR_FEATURES (top of file): True = our TreeSHAP fix (Stage-1 propagates),
+                        # False = DUNE's fresh-RF Gini (models with the same partition converge).
+                        if FAIR_FEATURES and getattr(self, "importance_df", None) is not None:
+                            m_feats = treeshap_feature_sets(self.classes, self.importance_df)
+                        else:
+                            m_feats = get_feature_importance_sets(n_tree, x_train, y_train, weight_of_samples,
+                                                                  max_leaf=leaf, max_depth=depth)
                         for feats in m_feats:
                             # ToDo: extract method analyse_grid_point to share code with write_simple_analysis
                             # Prepare a model for the given (depth, n_tree, feat, leaves)
@@ -489,6 +513,27 @@ class TONModelAnalyzer(ModelAnalyzer):
         train_data, test_data = self._prepare_data(npkts, classes_filter, train_file, test_file,
                                                    flow_count_dict_train, flow_count_dict_test)
         return train_data, test_data
+
+
+# Features generate_p4.py can emit on bmv2 (DIRECT + GUARDED + STATEFUL). SPP/TreeSHAP
+# also pick undeployable feats (Flow IAT Mean / Packet Length Mean -> need division).
+# ponytail: widen only if the P4 generator learns division.
+DEPLOYABLE = ["ip.len", "ip.ttl", "ip.hdr_len", "srcport", "dstport",
+              "udp.length", "tcp.window_size_value", "tcp.hdr_len",
+              "tcp.flags.syn", "tcp.flags.ack", "tcp.flags.push", "tcp.flags.fin", "tcp.flags.reset",
+              "Packet Length Total", "Max Packet Length", "Min Packet Length",
+              "PSH Flag Count", "ACK Flag Count", "SYN Flag Count"]
+
+
+def treeshap_feature_sets(cluster_classes, importance_df):
+    """Cumulative deployable-feature subsets, ranked by the Stage-1 model's TreeSHAP
+    importance summed over this cluster's classes. Model-dependent, so the Stage-1
+    choice propagates to the deployed features (which get_feature_importance_sets discards)."""
+    real = [c for c in cluster_classes if c != "Other"]
+    feats = [f for f in DEPLOYABLE if f in importance_df.columns]
+    imp = importance_df.set_index("classes").loc[real, feats].sum(axis=0)
+    ranked = imp.sort_values(ascending=False).index.tolist()
+    return [ranked[:i] for i in range(1, len(ranked) + 1)]
 
 
 def get_feature_importance_sets(n_tree, x_train, y_train, weight_of_samples, max_leaf=None, max_depth=None):
