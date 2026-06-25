@@ -10,6 +10,7 @@ from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import f1_score
 import shap
 import paths
+import os as _os; SEED = int(_os.environ.get("DUNE_SEED", "42"))
 
 TRAIN_CSV  = paths.TRAIN_CSV
 MODELS_DIR = paths.MODELS
@@ -27,12 +28,12 @@ le0 = joblib.load(MODELS_DIR/"rf"/"unconstrained_model.sav")["label_encoder"]
 y = le0.transform(df["Label"].values)
 classes = list(le0.classes_)
 # F4: split by Flow ID (no within-flow leakage); same split as train_models.py
-tr_i, va_i = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42).split(X, y, df["Flow ID"].values))
+tr_i, va_i = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=SEED).split(X, y, df["Flow ID"].values))
 X_tr, X_val, y_tr, y_val = X[tr_i], X[va_i], y[tr_i], y[va_i]
 
 def per_class_shap(clf, Xbg):
     expl = shap.TreeExplainer(clf)
-    bg = shap.sample(Xbg, min(500, len(Xbg)), random_state=42)
+    bg = shap.sample(Xbg, min(500, len(Xbg)), random_state=SEED)
     sv = expl.shap_values(bg)
     # Normalize to list[ per-class array (samples,features) ]
     if isinstance(sv, list):                       # old API: list over classes

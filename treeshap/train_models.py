@@ -19,6 +19,7 @@ import catboost as cb
 import shap
 
 import paths
+import os as _os; SEED = int(_os.environ.get("DUNE_SEED", "42"))
 TRAIN_CSV = paths.TRAIN_CSV
 MODELS_DIR = paths.MODELS
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,7 +47,7 @@ print(f"Shape: {X.shape}")
 print(pd.Series(y_raw).value_counts())
 
 # F4: split by Flow ID so packets of one flow never span train/val (no leakage)
-tr_i, va_i = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42).split(X, y, df["Flow ID"].values))
+tr_i, va_i = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=SEED).split(X, y, df["Flow ID"].values))
 X_tr, X_val, y_tr, y_val = X[tr_i], X[va_i], y[tr_i], y[va_i]
 
 def save_model(name, clf, X_bg):
@@ -56,7 +57,7 @@ def save_model(name, clf, X_bg):
     # TreeSHAP
     print(f"  [{name}] computing SHAP...")
     explainer = shap.TreeExplainer(clf)
-    bg = shap.sample(X_bg, min(500, len(X_bg)), random_state=42)
+    bg = shap.sample(X_bg, min(500, len(X_bg)), random_state=SEED)
     sv = explainer.shap_values(bg)
     # sv shape: (samples, features) for binary, (samples, features, classes) for multi
     if isinstance(sv, list):
@@ -78,13 +79,13 @@ def save_model(name, clf, X_bg):
 
 # --- RF ---
 print("\n=== RandomForest ===")
-rf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=42)
+rf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=SEED)
 rf.fit(X_tr, y_tr)
 save_model("rf", rf, X_tr)
 
 # --- XGBoost ---
 print("\n=== XGBoost ===")
-xgb_clf = xgb.XGBClassifier(n_estimators=100, n_jobs=-1, random_state=42,
+xgb_clf = xgb.XGBClassifier(n_estimators=100, n_jobs=-1, random_state=SEED,
                               use_label_encoder=False, eval_metric="mlogloss",
                               tree_method="hist")
 xgb_clf.fit(X_tr, y_tr)
@@ -92,13 +93,13 @@ save_model("xgboost", xgb_clf, X_tr)
 
 # --- LightGBM ---
 print("\n=== LightGBM ===")
-lgb_clf = lgb.LGBMClassifier(n_estimators=100, n_jobs=-1, random_state=42, verbose=-1)
+lgb_clf = lgb.LGBMClassifier(n_estimators=100, n_jobs=-1, random_state=SEED, verbose=-1)
 lgb_clf.fit(X_tr, y_tr)
 save_model("lightgbm", lgb_clf, X_tr)
 
 # --- CatBoost ---
 print("\n=== CatBoost ===")
-cb_clf = cb.CatBoostClassifier(iterations=100, random_seed=42, verbose=0, thread_count=-1)
+cb_clf = cb.CatBoostClassifier(iterations=100, random_seed=SEED, verbose=0, thread_count=-1)
 cb_clf.fit(X_tr, y_tr)
 save_model("catboost", cb_clf, X_tr)
 

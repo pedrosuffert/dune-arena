@@ -10,6 +10,7 @@ import numpy as np, pandas as pd
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 import paths
+import os as _os; SEED = int(_os.environ.get("DUNE_SEED", "42"))
 
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "rf"
 N = 4
@@ -25,7 +26,7 @@ train = pd.read_csv(RB/"stage4"/"train_4_pkts.csv")
 flc = pd.read_csv(RB/"stage4"/"flow_counts_all.csv")
 cnt = flc.set_index("Flow ID")["packet_counts"].to_dict()
 train["pkt_count"] = train["Flow ID"].map(cnt)
-train = train.sample(frac=1, random_state=42).dropna(subset=["srcport","dstport","pkt_count"])
+train = train.sample(frac=1, random_state=SEED).dropna(subset=["srcport","dstport","pkt_count"])
 
 def sample_nature(r):
     return "pkt" if (r["Min Packet Length"]==-1 and r["Max Packet Length"]==-1
@@ -50,7 +51,7 @@ for _, row in ci.iterrows():
     w = df["weight"].to_list()
 
     clf = RandomForestClassifier(n_estimators=ntree, max_leaf_nodes=nleaf, max_depth=None,
-                                 bootstrap=False, random_state=42, n_jobs=-1)
+                                 bootstrap=False, random_state=SEED, n_jobs=-1)
     clf.fit(X, y, sample_weight=w)
 
     fn = OUT/f"cluster{cid}_T{ntree}_L{nleaf}_F{len(feats)}_N{N}.sav"

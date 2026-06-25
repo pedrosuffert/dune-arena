@@ -31,38 +31,36 @@ tree configurations, and sequence. The fix lives in
 - Brute-force TSP for Stage 5, dropping the Gurobi dependency.
 - A BMv2 P4 source generator with generalized n-class majority voting.
 
-## Results (offline, Stages 1–5)
+## Results (10 seeds)
 
-Flow-weighted macro-F1 over the seven classes, DUNE TCAM cost, and the Stage-5 cluster
-sequence. Higher F1 is better; lower TCAM is cheaper.
+Flow-weighted macro-F1 over the seven classes, as mean ± standard deviation across ten
+random seeds (real BMv2 fattree in-network, 7 classes, 3258 test flows). Higher is better.
 
-| Stage-1 model | macro-F1 | TCAM | sequence | class partition |
-|---------------|---------:|-----:|----------|-----------------|
-| RF       | 89.91 | 10.76 | `[2,3,1,0]` | `{ddos} {injection} {dos,normal,password,scanning} {xss}` |
-| LightGBM | 89.60 |  8.33 | `[3,2,1,0]` | `{ddos} {injection} {dos,normal,password,scanning} {xss}` |
-| CatBoost | 89.50 | 10.76 | `[2,1,3,0]` | `{ddos} {injection} {dos,normal,password,scanning} {xss}` |
-| XGBoost  | 89.19 |  5.56 | `[2,1,3,0]` | `{dos} {normal} {scanning} {ddos,injection,password,xss}` |
+| Stage-1 model | offline macro-F1 | in-network macro-F1 |
+|---------------|-----------------:|--------------------:|
+| Random Forest | 89.67 ± 0.50 | 89.30 ± 0.93 |
+| XGBoost       | 90.27 ± 0.92 | 89.74 ± 0.81 |
+| LightGBM      | 90.22 ± 0.50 | 89.82 ± 0.67 |
+| CatBoost      | 89.85 ± 0.85 | 89.54 ± 0.71 |
 
-RF, LightGBM, and CatBoost reach the *same* class partition yet deploy *different* sub-models:
-each ranks features by its own TreeSHAP and lands on different tree configurations. That
-divergence is the propagation fix working. XGBoost is the outlier: it does not isolate `ddos`,
-buys the cheapest TCAM, and scores the lowest macro-F1. A model-dependent accuracy/cost
-tradeoff now reaches hardware, which the released pipeline could not express.
+**The four ensembles are statistically tied** — every pairwise comparison is
+non-significant (Wilcoxon signed-rank, p = 0.23–1.0), offline and in-network. The
+single-seed rankings we first saw were noise.
 
-**In-network (real BMv2 fattree, 7 classes, 3258 flows).** Each pipeline was deployed and
-scored end to end. The Stage-1 choice propagates: the four deploy distinctly and score
-distinctly.
+**The propagation fix still matters, structurally.** With it, the four deploy *distinctly*:
+each ranks features by its own TreeSHAP and lands on different sub-model features, tree
+configurations, and cluster sequence. What the fix buys is that the Stage-1 choice reaches
+hardware at all, something the released pipeline could not express; what it does *not* buy is
+a reliably more accurate model.
 
-| Stage-1 model | offline macro-F1 | in-network macro-F1 | gap |
-|---------------|-----------------:|--------------------:|----:|
-| RF       | 89.91 | 89.66 | -0.25% |
-| LightGBM | 89.60 | 89.24 | -0.36% |
-| XGBoost  | 89.19 | 88.59 | -0.60% |
-| CatBoost | 89.50 | 87.77 | -1.73% |
+**Partitions are seed-sensitive.** The RF = LightGBM = CatBoost three-way agreement appears
+in only 3 of 10 seeds, and no pair of models shares a partition reliably. The one invariant:
+`ddos` and `dos` never land in the same cluster (0 of 40 model-seed cases). For volumetric
+DoS, the partition matters more than the algorithm.
 
-In-network tracks offline within 1.8% for every model, so the generated P4 is faithful to the
-trained sub-models. CatBoost degrades most on hardware; the in-network ranking is
-RF > LightGBM > XGBoost > CatBoost.
+**In-network tracks offline** within +0.3 to +0.5 p.p. for every model, so the generated P4 is
+faithful to the trained sub-models. Random Forest keeps the least per-flow state (≈328 register
+collisions vs ≈900–1000 for the boosting models).
 
 ## Repository layout
 
@@ -71,9 +69,7 @@ dune-arena/
 ├── treeshap/                 # contribution layer: the pipeline glue
 │   ├── paths.py              #   single path source; env DUNE_FAIR_DATA / DUNE_FAIR_GT override
 │   ├── build_label_map.py    #   Flow ID -> Label map from TON-IoT GroundTruth CSVs
-│   ├── build_datasets.py     #   train_7class.csv + Ethernet-wrapped test pcap
-│   ├── patch_normal_test.py  #   add the 'normal' (background) class to the test set
-│   ├── prep_stage4.py        #   build DUNE Stage-4 inputs at N=4 clusters
+│   ├── prepare_dataset.py    #   one-time: merge raw TON-IoT -> train_7class.csv, test pcap, Stage-4 inputs
 │   ├── train_models.py       #   Stage 1: train the 4 ensembles + TreeSHAP importance
 │   ├── build_importance.py   #   Stage 2: normalized per-class TreeSHAP matrices
 │   ├── run_spp.py            #   Stage 3: SPP class partition (4 clusters)
@@ -120,6 +116,12 @@ The dataset is TON-IoT: raw pcaps plus the official `GroundTruth_Network` CSVs
 Stage 0 (`data_generation`, tshark) needs the raw pcaps. The offline pipeline from
 `train_7class.csv` onward needs only the ML dependencies.
 
+**Skip Stage 0.** The processed canonical dataset used for the published results
+(`train_7class.csv`, `ToN_IoT_test.pcap`, and the `stage4/` inputs) is attached to the
+GitHub Release. Download it into your data root and the pipeline runs from there. To rebuild
+it from raw TON-IoT instead, run `treeshap/prepare_dataset.py` (a single, documented pass that
+merges the captures). Regenerated data is equivalent, not byte-identical, to the Release.
+
 ## Running the offline pipeline
 
 Each step writes artifacts the next step reads, so run them in order:
@@ -127,9 +129,7 @@ Each step writes artifacts the next step reads, so run them in order:
 ```bash
 uv run python treeshap/build_label_map.py     # Flow ID -> Label
 #   (run DUNE data_generation per pcap set to produce flow features)
-uv run python treeshap/build_datasets.py      # train_7class.csv + test pcap
-uv run python treeshap/patch_normal_test.py   # add 'normal' to the test set
-uv run python treeshap/prep_stage4.py         # Stage-4 inputs
+uv run python treeshap/prepare_dataset.py     # train_7class.csv + test pcap + Stage-4 inputs (one-time)
 uv run python treeshap/train_models.py        # Stage 1 + TreeSHAP
 uv run python treeshap/build_importance.py    # Stage 2 importance matrices
 uv run python treeshap/run_spp.py             # Stage 3 partition
@@ -162,7 +162,8 @@ The `testbed/` then deploys the generated P4 and scores it against the test pcap
   ground truth, recovered from the DoS captures, not an independent benign trace.
 - **Deployable feature set.** Stage 4 restricts features to the 19 BMv2-deployable ones. No
   division-based features (e.g. Flow IAT Mean, Packet Length Mean) reach the switch.
-- **Single seed.** Every result above comes from one random seed; no variance is reported.
+- **Statistical tie.** Results are mean ± std over ten seeds; the four models are
+  statistically tied (pairwise Wilcoxon n.s.), so no single ensemble is reliably best.
 
 ## Citing
 

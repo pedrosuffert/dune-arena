@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from itertools import compress
 
 import warnings
+import os as _os; SEED = int(_os.environ.get("DUNE_SEED", "42"))
 
 # --- Feature-selection regime (documented in the thesis) -------------------------------
 # FAIR_FEATURES = True  -> our fix: Stage 4 ranks features by the cluster's TreeSHAP over the
@@ -146,8 +147,8 @@ class ModelAnalyzer(ABC):
         test_data["pkt_count"] = test_data["Flow ID"].map(flow_counts_test)
 
         # Shuffle and clean data
-        train_data = train_data.sample(frac=1, random_state=42).dropna(subset=['srcport', 'dstport'])
-        test_data = test_data.sample(frac=1, random_state=42).dropna(subset=['srcport', 'dstport'])
+        train_data = train_data.sample(frac=1, random_state=SEED).dropna(subset=['srcport', 'dstport'])
+        test_data = test_data.sample(frac=1, random_state=SEED).dropna(subset=['srcport', 'dstport'])
 
         # Assign 'sample_nature' and 'weight' columns
         train_data['sample_nature'] = train_data.apply(assign_sample_nature, axis=1)
@@ -212,7 +213,7 @@ class ModelAnalyzer(ABC):
             feats = x_train.columns.values.tolist()
             for leaf in self.max_leaves_list:
                 # Prepare a model for the given (depth, n_tree, feat)
-                model = RandomForestClassifier(n_estimators=n_tree, max_leaf_nodes=leaf, n_jobs=10, random_state=42,
+                model = RandomForestClassifier(n_estimators=n_tree, max_leaf_nodes=leaf, n_jobs=10, random_state=SEED,
                                                bootstrap=False)
                 # Train (fit) the model with the data
                 model.fit(x_train[feats], y_train, sample_weight=weight_of_samples)
@@ -293,7 +294,7 @@ class ModelAnalyzer(ABC):
                             # ToDo: extract method analyse_grid_point to share code with write_simple_analysis
                             # Prepare a model for the given (depth, n_tree, feat, leaves)
                             model = RandomForestClassifier(n_estimators=n_tree, max_leaf_nodes=leaf, max_depth=depth,
-                                                           n_jobs=10, random_state=42, bootstrap=False)
+                                                           n_jobs=10, random_state=SEED, bootstrap=False)
                             # Train (fit) the model with the data
                             model.fit(x_train[feats], y_train, sample_weight=weight_of_samples)
                             # Infer (predict) the labels
@@ -430,7 +431,7 @@ class ModelAnalyzer(ABC):
         test_label_names, test_indices = self.get_test_labels(test_data)
         weight_of_samples = list(train_data['weight'])
         model = RandomForestClassifier(n_estimators=model_info['tree'], max_depth=model_info['depth'], n_jobs=10,
-                                       random_state=42, bootstrap=False)
+                                       random_state=SEED, bootstrap=False)
 
         # Train (fit) the model with the data
         model.fit(x_train[model_info['feats']], y_train, sample_weight=weight_of_samples)
@@ -563,7 +564,7 @@ def get_feature_importance_sets(n_tree, x_train, y_train, weight_of_samples, max
         List[List[str]]
             A list of lists of strings, where each nested list contains a cumulative subset of feature names sorted by importance.
     """
-    rf_opt = RandomForestClassifier(n_estimators=n_tree, max_leaf_nodes=max_leaf, random_state=42, bootstrap=False,
+    rf_opt = RandomForestClassifier(n_estimators=n_tree, max_leaf_nodes=max_leaf, random_state=SEED, bootstrap=False,
                                     n_jobs=10, max_depth=max_depth)
     rf_opt.fit(x_train, y_train, sample_weight=weight_of_samples)
 

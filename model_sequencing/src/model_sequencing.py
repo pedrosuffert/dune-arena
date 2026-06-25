@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from tsp import order_blocks_with_tsp
+import os as _os; SEED = int(_os.environ.get("DUNE_SEED", "42"))
 
 def literal_converter(val):
     # replace first val with '' or some other null identifier if required
@@ -126,8 +127,8 @@ def analyze_model(use_case, classes_filter, npkts, n_tree, max_leaf, feats, clas
     # Assign values to the multiply column based on the conditions
     test_data['multiply'] = np.where(all_minus_one, 1, test_data['pkt_count'] - npkts)
 
-    train_data = train_data.sample(frac=1, random_state=42)
-    test_data  = test_data.sample(frac=1, random_state=42)
+    train_data = train_data.sample(frac=1, random_state=SEED)
+    test_data  = test_data.sample(frac=1, random_state=SEED)
 
     train_data = train_data.dropna(subset=['srcport', 'dstport']) 
     test_data  = test_data.dropna(subset=['srcport', 'dstport'])
@@ -158,7 +159,7 @@ def analyze_model(use_case, classes_filter, npkts, n_tree, max_leaf, feats, clas
     test_samples_nature = test_data['sample_nature']
 
     model = RandomForestClassifier(n_estimators = n_tree, max_leaf_nodes=max_leaf, n_jobs=10,
-                                        random_state=42, bootstrap=False)
+                                        random_state=SEED, bootstrap=False)
     
     model.fit(train_samples[feats], train_labels, sample_weight=weight_of_samples)
     y_pred = model.predict(test_samples[feats])

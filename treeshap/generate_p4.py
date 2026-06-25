@@ -18,7 +18,7 @@ def get_splits(forest, feature_names):
     for t in range(len(forest.estimators_)):
         clf = forest[t]
         n_nodes = clf.tree_.node_count
-        features = [feature_names[i] for i in clf.tree_.feature]
+        features = [feature_names[i] if i >= 0 else None for i in clf.tree_.feature]
         for i in range(0, n_nodes):
             threshold = clf.tree_.threshold[i]
             if threshold != -2.0:
