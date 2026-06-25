@@ -1,3 +1,5 @@
+> **LEGACY (vendored from DUNE).** This module (DUNE's PCFI) is NOT used by dune-arena. TreeSHAP (treeshap/build_importance.py) replaces it; kept for reference.
+
 # Unconstrained ML model training & Obtaining feature importance values per class
 Used to train an unconstrained ML model and extract the relationships between input features and output variables, per class feature importance (PCFI).
 For this you can use the python programs and packages under the `src` folder.

@@ -1,3 +1,7 @@
+# === LEGACY (vendored from DUNE) ===
+# DUNE original analysis script. NOT used by dune-arena.
+# ===================================
+
 import ast
 import configparser
 import os

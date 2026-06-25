@@ -1,3 +1,7 @@
+# === LEGACY (vendored from DUNE) ===
+# DUNE's PCFI importance. NOT used by dune-arena; replaced by TreeSHAP (treeshap/build_importance.py).
+# ===================================
+
 import numpy as np
 import pandas as pd
 import scipy.stats as sps

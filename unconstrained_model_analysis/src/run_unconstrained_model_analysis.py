@@ -1,3 +1,7 @@
+# === LEGACY (vendored from DUNE) ===
+# DUNE's PCFI Stage 1-2 entry point. NOT used by dune-arena; TreeSHAP (treeshap/build_importance.py) replaces PCFI. Kept for reference.
+# ===================================
+
 import ast
 import configparser
 import os

@@ -1,3 +1,7 @@
+# === LEGACY (vendored from DUNE) ===
+# DUNE original demo. NOT used by dune-arena.
+# ===================================
+
 from random import sample
 
 from matplotlib import pyplot as plt

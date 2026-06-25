@@ -81,15 +81,24 @@ dune-arena/
 ├── data_generation/          # DUNE Stage 0: pcap -> flow features (tshark)
 ├── model_partitioning/SPP/   # DUNE Stage 3: SPP solver
 ├── model_sequencing/         # DUNE Stage 5: TSP sequencing
-├── unconstrained_model_analysis/pcfi/   # DUNE's original PCFI, kept for reference
+├── unconstrained_model_analysis/   # DUNE PCFI — reference only, LEGACY-bannered (replaced by TreeSHAP)
 ├── testbed/                  # vendored BMv2/Mininet testbed, lab-only (see testbed/PROVENANCE.md)
 ├── pyproject.toml            # uv project: offline deps
 └── uv.lock
 ```
 
-The DUNE stage directories are kept intact; only `modelAnalyzer.py` carries the fix. PCFI
-stays under `unconstrained_model_analysis/` to document what TreeSHAP replaced. The testbed in
-`testbed/` is vendored from `nds-group/DUNE-bmv2` with our fixes; see `testbed/PROVENANCE.md`.
+**What's ours vs vendored.** `treeshap/` and the `modelAnalyzer.py` fix are this fork's
+contribution. Everything else under the stage directories is vendored from DUNE: the parts our
+pipeline drives (Stage 0 `data_generation`, Stage 3 `model_partitioning/SPP`, Stage 4
+`cluster_analysis/run_cluster_analysis.py` + `modelAnalyzer.py`, Stage 5 `model_sequencing`),
+plus reference-only files we keep but never run:
+
+- `unconstrained_model_analysis/` — DUNE's PCFI Stage 1–2, replaced by TreeSHAP (`treeshap/build_importance.py`).
+- `cluster_analysis/src/{f1_analysis_evaluation, run_correlation_experiment, run_simple_classifier}.py` — DUNE analysis/demo scripts.
+- `model_partitioning/src/model_partitioning.py` — DUNE's Stage-3 runner, replaced by `treeshap/run_spp.py`.
+
+Each reference-only file carries a `# === LEGACY (vendored from DUNE) ===` banner at its top. The
+testbed in `testbed/` is vendored from `nds-group/DUNE-bmv2` with our fixes; see `testbed/PROVENANCE.md`.
 
 ## Setup
 

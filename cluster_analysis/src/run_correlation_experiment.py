@@ -1,3 +1,7 @@
+# === LEGACY (vendored from DUNE) ===
+# DUNE original experiment. NOT used by dune-arena.
+# ===================================
+
 import ast
 import configparser
 import logging

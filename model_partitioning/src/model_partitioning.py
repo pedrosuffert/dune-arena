@@ -1,3 +1,7 @@
+# === LEGACY (vendored from DUNE) ===
+# DUNE's original Stage-3 runner. NOT used by dune-arena; treeshap/run_spp.py drives the SPP/ solver directly.
+# ===================================
+
 import ast
 import configparser
 import os
