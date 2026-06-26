@@ -1,6 +1,0 @@
-matplotlib==3.7.5
-numpy==1.24.4
-pandas==2.0.3
-PuLP==2.8.0
-tabulate
-tqdm==4.66.4
