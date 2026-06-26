@@ -54,10 +54,16 @@ diverges from DUNE.**
 
 ## What I changed vs DUNE
 
+This is a **fork, not a rewrite.** DUNE's six-stage architecture and most of its
+pipeline do the heavy lifting — feature extraction (Stage 0), the SPP class
+partitioning (Stage 3, untouched), the hardware-aware sub-model training and TCAM
+analysis (Stage 4), and the sequencing scaffold (Stage 5) run largely as the authors
+wrote them, the bulk of the live pipeline code. My changes are focused:
+
 - **TreeSHAP instead of PCFI (Stage 2).** DUNE scores importance with PCFI, which is tied to one
   model family. TreeSHAP is model-agnostic, so four ensembles compete on equal footing as the
   Stage-1 model: Random Forest, XGBoost, LightGBM, CatBoost.
-- **The propagation fix — the change I care about most.** Released DUNE's Stage 4 re-derives each
+- **The propagation fix.** Released DUNE's Stage 4 re-derives each
   cluster's features from a *fresh* Random Forest's Gini importance, discarding the Stage-2 scores.
   So the Stage-1 model reached hardware only through the class partition; its feature preferences
   barely propagated. Here, Stage 4 ranks each cluster's features by *that cluster's* TreeSHAP
