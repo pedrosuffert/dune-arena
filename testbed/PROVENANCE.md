@@ -60,4 +60,18 @@ Summary of the changes:
   `eliminated_classes`; batched the tshark flow filter into chunks to stay under
   the shell `argv` length limit on large captures.
 - **`utils/calculate_score.py`** — Python 3.12 / pandas 2 compatibility fixes.
+  Note: the `classes = [...]` order near the top is rewritten per model by
+  `treeshap/deploy_stage6.py` (global class-id order follows each model's
+  Stage-5 sequence).
 - **`dune/custom_topo.py`** — Python 3.12 / pandas 2 compatibility fix.
+
+Applied later in this fork (2026-07-01):
+
+- **`dune/custom_topo.py`** — `build()` now plumbs the `test_pcap` /
+  `test_pcap_dir` topology arguments into topo attributes. Upstream never set
+  them, so `--test=tonlinear` always replayed the default
+  `./data/ToN_IoT_test.pcap` path regardless of the Makefile's `TEST_PCAP`
+  variable (unnoticed upstream because the pcap sat at the default path).
+- **`runlin.sh`** (new) — one-command line-topology run
+  (`runlin.sh <model> <pps>`): mininet cleanup, p4 env, `make run-linear-test`
+  with the repo's dataset paths, results scored.

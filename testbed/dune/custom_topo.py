@@ -202,6 +202,8 @@ class Dune(Topo, ABC):
         self.pcap_regex = pcap_regex
         self.test_pps = kwargs.get('test_pps', 100)
         self.pkt_num = kwargs.get('pkt_num', None)
+        self.test_pcap = kwargs.get('test_pcap', './data/ToN_IoT_test.pcap')
+        self.test_pcap_dir = kwargs.get('test_pcap_dir', 'utils/experiment_pcaps')
 
         regex_pattern = re.compile(pcap_regex)
 
