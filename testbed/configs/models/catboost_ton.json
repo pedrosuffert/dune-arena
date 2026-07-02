@@ -1,0 +1,30 @@
+{
+    "m1": {
+        "p4": "catboost_iot_m1",
+        "files": [
+            "catboost_ton/cluster0_T1_L85_F3_N4.sav"
+        ],
+        "previous": null
+    },
+    "m2": {
+        "p4": "catboost_iot_m2",
+        "files": [
+            "catboost_ton/cluster2_T1_L41_F5_N4.sav"
+        ],
+        "previous": "m1"
+    },
+    "m3": {
+        "p4": "catboost_iot_m3",
+        "files": [
+            "catboost_ton/cluster1_T1_L85_F9_N4.sav"
+        ],
+        "previous": "m2"
+    },
+    "m4": {
+        "p4": "catboost_iot_m4",
+        "files": [
+            "catboost_ton/cluster3_T1_L85_F9_N4.sav"
+        ],
+        "previous": "m3"
+    }
+}

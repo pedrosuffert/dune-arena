@@ -97,15 +97,16 @@ uv run python treeshap/stage45.py           # Stage 4 + 5: sub-models, then sequ
 uv run python treeshap/collate.py           # -> data/output/results_comparison.csv
 ```
 
-That reproduces **one seed**. The thesis reports mean ± std over ten; to repeat that, loop the seed
-(the dataset is fixed — `DUNE_SEED` only reseeds the model training and the train/validation split):
+That reproduces **one seed**. The thesis reports mean ± std over ten; the committed campaign
+driver loops seeds, records both Stage-4 regimes offline, and (on a lab box) runs the in-network
+deploy per model. The dataset is fixed — `DUNE_SEED` only reseeds model training and the
+train/validation split:
 
 ```bash
-for s in $(seq 1 10); do
-  for stage in train_models build_importance run_spp stage45; do
-    DUNE_SEED=$s uv run python treeshap/$stage.py
-  done
-done
+uv run python treeshap/multiseed.py            # 10 seeds; MS_MODELS / MS_PPS to narrow
+uv run python treeshap/analyze_multiseed.py    # mean±std, Wilcoxon+Holm, fidelity, partitions
+uv run python treeshap/stage1_extract.py       # Stage-1 val table + per-seed TreeSHAP snapshots
+uv run python treeshap/make_figures.py         # thesis figures (PDF) from the campaign CSVs
 ```
 
 ## From scratch (raw TON-IoT)
@@ -113,12 +114,16 @@ done
 To rebuild the dataset from the original captures instead of the Release:
 
 1. Get the TON-IoT raw pcaps and the `GroundTruth_Network` CSVs (Alsaedi et al., 2020).
-2. Point the pipeline at them: `export DUNE_FAIR_DATA=/path/to/data DUNE_FAIR_GT=/path/to/groundtruth`.
-3. Extract flow features with DUNE's Stage 0 (`data_generation`, needs `tshark`).
-4. Build the canonical 7-class dataset, then run the same Stage 1–5 commands as above:
+2. Point the pipeline at them: env `DUNE_FAIR_RAW` (raw pcap root), `DUNE_FAIR_GT` (ground-truth
+   CSVs), and optionally `DUNE_FAIR_DATA` (work/output root, default `<repo>/data`).
+3. Carve per-class pcaps, extract features with DUNE's Stage 0 (needs `tshark`), build the dataset:
 
 ```bash
-uv run python treeshap/build_label_map.py   # Flow ID -> Label, from the GroundTruth CSVs
+uv run python treeshap/build_label_map.py    # Flow ID -> Label, from the GroundTruth CSVs
+uv run python treeshap/carve_slim_pcaps.py   # GT-filtered attack-only pcaps + clean benign 'normal'
+# DUNE Stage 0, once per pcap dir (edit data_generation/src/params.ini data_path):
+#   data/slim_pcaps, then data/dos_only
+uv run python data_generation/src/generate_data.py
 uv run python treeshap/prepare_dataset.py    # merge -> train_7class.csv + test pcap + Stage-4 inputs
 ```
 
@@ -127,41 +132,47 @@ statistical tie, so that is enough.
 
 ## Stage 6: in-network deploy (lab only)
 
-Stage 6 deploys the generated P4 on a real BMv2 fattree (Mininet) and scores it end to end. It needs
-a lab box with `simple_switch_grpc`, Mininet, and `p4runtime_sh`, so it is **not pip-installable**.
-See `testbed/` and `testbed/PROVENANCE.md`.
+Stage 6 deploys the generated P4 on a real BMv2 **line** of five switches (Mininet): the ILP places
+the four sub-models along the single path in dependency order and the fifth switch just forwards
+(`h1 → m1 → m2 → m3 → m4 → fwd → h2`). It needs a lab box with `simple_switch_grpc`, Mininet, and
+`p4runtime_sh`, so it is **not pip-installable**. See `testbed/` and `testbed/PROVENANCE.md`.
+(The upstream fat-tree targets remain in the Makefile but are not part of the reported results.)
 
 ```bash
-uv run python treeshap/train_submodels.py rf                        # sub-models for one model
-uv run python treeshap/generate_p4.py --sav <F.sav> --out <X.p4> \
-    --model-id <N> --offset <K> --classlist "<c1,c2,...>"           # emit the P4 program
+uv run python treeshap/train_submodels.py rf     # sub-models for one model
+uv run python treeshap/deploy_stage6.py rf       # P4 per cluster + config chain + scorer class order
+testbed/runlin.sh rf 500                         # one line-topology run, scored
 ```
 
 ## Results
 
 Flow-weighted macro-F1 over the seven classes, mean ± standard deviation across ten seeds (real
-BMv2 fattree in-network, 3258 test flows). Higher is better.
+BMv2 five-switch line in-network, 3500 test flows, 500 pps). Higher is better. Raw CSVs and the
+full statistical summary live in `results/`.
 
-| Stage-1 model | offline macro-F1 | in-network macro-F1 |
-|---------------|-----------------:|--------------------:|
-| Random Forest | 89.67 ± 0.50 | 89.30 ± 0.93 |
-| XGBoost       | 90.27 ± 0.92 | 89.74 ± 0.81 |
-| LightGBM      | 90.22 ± 0.50 | 89.82 ± 0.67 |
-| CatBoost      | 89.85 ± 0.85 | 89.54 ± 0.71 |
+| Stage-1 model | offline (fix) | offline (DUNE as released) | in-network (line) |
+|---------------|--------------:|---------------------------:|------------------:|
+| Random Forest | 96.09 ± 0.39 | 96.30 ± 0.26 | 95.22 ± 0.34 |
+| XGBoost       | 96.27 ± 0.19 | 96.30 ± 0.26 | 95.34 ± 0.56 |
+| LightGBM      | 96.15 ± 0.31 | 96.30 ± 0.26 | 94.64 ± 0.52 |
+| CatBoost      | 96.23 ± 0.24 | 96.29 ± 0.26 | 95.72 ± 0.86 |
 
-- **The four ensembles tie.** Every pairwise comparison is non-significant (Wilcoxon signed-rank,
-  p = 0.23–1.0), offline and in-network. The single-seed rankings I first saw were noise.
-- **The propagation fix still matters, structurally.** With it the four deploy *distinctly* — each
-  ranks features by its own TreeSHAP and lands on different sub-model features, tree configurations,
-  and cluster sequence. The fix buys that the Stage-1 choice reaches hardware at all; it does not
-  buy a reliably more accurate model.
-- **Partitions are seed-sensitive.** The RF = LightGBM = CatBoost three-way agreement shows up in
-  only 3 of 10 seeds, and no pair shares a partition reliably. The one invariant: `ddos` and `dos`
-  never land in the same cluster (0 of 40 model-seed cases). For volumetric DoS, the partition
-  matters more than the algorithm.
-- **In-network tracks offline** within +0.3 to +0.5 p.p. for every model, so the generated P4 is
-  faithful. Random Forest keeps the least per-flow state (≈328 register collisions vs ≈900–1000 for
-  the boosting models).
+- **The four ensembles tie.** Offline every pairwise Wilcoxon is non-significant (p = 0.28–1.0).
+  In-network three pairs involving LightGBM reach raw p < 0.05, but none survives Holm correction
+  (adjusted p ≥ 0.117) — a slight LightGBM-behind *tendency*, not a significant difference.
+- **The "as released" column is the propagation fix's proof.** Without the fix, all four Stage-1
+  models produce **numerically identical** deployments (96.30 ± 0.26 across the board): Stage 4
+  re-derives features with a fresh RF, so the Stage-1 choice never reaches hardware. With the fix,
+  the four deploy distinctly (different features, tree configs, TCAM: LightGBM 7.9 / XGBoost 8.2 /
+  CatBoost 10.8 / RF 11.5) — and the accuracy tie becomes a finding instead of an artifact.
+- **The partition converges.** All 40 model-seed cases produce the same class grouping:
+  `{ddos, dos, normal, scanning} {injection} {password} {xss}` (only cluster numbering, i.e.
+  deploy order, varies). In particular `ddos` and `dos` always share a cluster on this clean
+  dataset build.
+- **In-network tracks offline** within +0.5 to +1.5 p.p. (largest gap: LightGBM), so the generated
+  P4 is faithful. Per-flow register collisions converge to ≈323–334 for every model at 500 pps
+  (collision counts are load-dependent; compare only at fixed replay rate). Per class, the models
+  differ mainly on `xss` — the isolated cluster where each model's feature choice matters most.
 
 ## Repository layout
 
@@ -177,6 +188,13 @@ dune-arena/
 │   ├── stage45.py            #   drives Stage 4 (grid) + Stage 5 (TSP) for all models
 │   ├── train_submodels.py    #   Stage 6a: train + save per-cluster RF sub-models
 │   ├── generate_p4.py        #   Stage 6b: BMv2 P4 generator (n-class majority voting)
+│   ├── deploy_stage6.py      #   Stage 6c: per-model P4 + config chain + scorer order into testbed/
+│   ├── carve_slim_pcaps.py   #   raw TON-IoT -> per-class pcaps (GT-filtered + clean normal)
+│   ├── multiseed.py          #   10-seed campaign: offline both regimes + in-network line runs
+│   ├── analyze_multiseed.py  #   mean±std, Wilcoxon+Holm, effect sizes, fidelity, partitions
+│   ├── stage1_extract.py     #   Stage-1 val table + per-seed TreeSHAP snapshots
+│   ├── extract_per_run_reports.py  # per-class in-network F1 from the run archives
+│   ├── make_figures.py       #   thesis figures (PDF) from the campaign CSVs
 │   └── collate.py            #   one results view -> output/results_comparison.csv
 ├── cluster_analysis/         # DUNE Stage 4 (modelAnalyzer.py holds the propagation fix)
 ├── data_generation/          # DUNE Stage 0: pcap -> flow features (tshark)
@@ -205,12 +223,18 @@ Each reference-only file carries a `# === LEGACY (vendored from DUNE) ===` banne
 - **TON-IoT port bias.** The dataset is testbed traffic; web-attack classes (xss, injection,
   password) concentrate on the victim's service ports, so port features inflate their separability
   beyond a production capture.
-- **"Normal" is not a clean benign capture.** It is background traffic absent from the attack ground
-  truth, recovered from the DoS captures, not an independent benign trace.
+- **"Normal" construction.** The benign class is sampled from TON-IoT's dedicated benign captures
+  (`normal_pcaps`), excluding any 5-tuple that collides with an attack entry in the ground truth
+  (TON-IoT reuses the same IP/port space across captures). Attack pcaps are ground-truth-filtered
+  (attack-only, no background). ~6% of ground-truth Flow IDs collide across captures; collisions
+  resolve last-write-wins.
 - **Deployable feature set.** Stage 4 restricts features to the 19 BMv2-deployable ones; no
   division-based features (e.g. Flow IAT Mean) reach the switch.
-- **Statistical tie.** Results are mean ± std over ten seeds; the four models are statistically tied
-  (pairwise Wilcoxon n.s.), so no single ensemble is reliably best.
+- **Statistical tie.** Results are mean ± std over ten seeds; pairwise Wilcoxon with Holm correction
+  finds no significant difference between the four models, offline or in-network. LightGBM shows a
+  non-significant behind-tendency in-network.
+- **BMv2 is a functional testbed.** 100–500 pps replay demonstrates fidelity of the generated P4,
+  not hardware throughput; collision counts are load-dependent and comparable only at a fixed rate.
 
 ## Citing
 

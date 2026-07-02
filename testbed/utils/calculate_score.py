@@ -62,7 +62,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    classes = ['dos', 'normal', 'password', 'scanning', 'xss', 'injection', 'ddos']
+    classes = ['ddos', 'dos', 'normal', 'scanning', 'password', 'injection', 'xss']
     results_df = pd.read_csv(args.results, index_col=None)
     print(f"Collision count: {results_df['collision'].sum()}")
     ground_truth_df = pd.read_csv(args.ground_truth).drop(columns=['Unnamed: 0'], errors='ignore')

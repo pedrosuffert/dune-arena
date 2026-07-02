@@ -3,23 +3,22 @@
 #include "dune_headers.p4"
 
 struct StatefullFeatures_t {
-    bit<16> total_length;
+    bit<16> max_length;
 }
 
 control UpdateAndGetStatefullFeatures(
     in Headers_t hdr, in standard_metadata_t std_meta, in Hash_t hashes,
     in PktCount_t pkt_count, in bool new_flow, out StatefullFeatures_t statefull_features) {
-    bit<16> total_length;
-    register<bit<16>>(NB_REG_ENTRIES) flows_total_length;
-    action GetUpdateTotalLength () {
-        if (new_flow) { total_length = 0; } else { flows_total_length.read(total_length, hashes.reg_idx32); }
-        total_length += hdr.ipv4.total_length;
-        flows_total_length.write(hashes.reg_idx32, total_length);
+    bit<16> max_length;
+    register<bit<16>>(NB_REG_ENTRIES) flows_max_length;
+    action GetUpdateMaxLength () {
+        flows_max_length.read(max_length, hashes.reg_idx32);
+        if (new_flow || max_length < hdr.ipv4.total_length) { max_length = hdr.ipv4.total_length; flows_max_length.write(hashes.reg_idx32, max_length); }
     }
     apply {
-        GetUpdateTotalLength();
+        GetUpdateMaxLength();
         statefull_features = {
-            total_length = total_length
+            max_length = max_length
         };
     }
 }
@@ -27,52 +26,70 @@ control UpdateAndGetStatefullFeatures(
 control GetStatefullFeaturesDefaultValues(out StatefullFeatures_t statefull_features) {
     apply {
         statefull_features = {
-            total_length = 0
+            max_length = 0
         };
     }
 }
 
 #define INFERENCE_POINT 4
-#define MODEL_ID 1
+#define MODEL_ID 3
 
 struct Features_t {
     bit<16> tcp_window;
     bit<4> tcp_len;
+    bit<16> udp_len;
+    bit<1> tcp_ack;
 }
 
 struct Codewords_t {
     bit<4> codeword0_0;
-    bit<21> codeword0_1;
+    bit<43> codeword0_1;
     bit<3> codeword0_2;
-    bit<10> codeword0_3;
-    bit<2> codeword0_4;
+    bit<2> codeword0_3;
+    bit<3> codeword0_4;
+    bit<12> codeword0_5;
+    bit<3> codeword0_6;
+    bit<1> codeword0_7;
+    bit<13> codeword0_8;
 }
 
 control InferenceModel(
     in Headers_t hdr, in Metadata_t meta, in standard_metadata_t std_meta,
     in StatefullFeatures_t statefull_features, out Class_t class) {
 
-    Codewords_t codewords = {0,0,0,0,0};
+    Codewords_t codewords = {0,0,0,0,0,0,0,0,0};
 
     action SetCode0(bit<4> code0) {
         codewords.codeword0_0 = code0;
     }
-    action SetCode1(bit<21> code0) {
+    action SetCode1(bit<43> code0) {
         codewords.codeword0_1 = code0;
     }
     action SetCode2(bit<3> code0) {
         codewords.codeword0_2 = code0;
     }
-    action SetCode3(bit<10> code0) {
+    action SetCode3(bit<2> code0) {
         codewords.codeword0_3 = code0;
     }
-    action SetCode4(bit<2> code0) {
+    action SetCode4(bit<3> code0) {
         codewords.codeword0_4 = code0;
+    }
+    action SetCode5(bit<12> code0) {
+        codewords.codeword0_5 = code0;
+    }
+    action SetCode6(bit<3> code0) {
+        codewords.codeword0_6 = code0;
+    }
+    action SetCode7(bit<1> code0) {
+        codewords.codeword0_7 = code0;
+    }
+    action SetCode8(bit<13> code0) {
+        codewords.codeword0_8 = code0;
     }
     action nop() {}
 
     Features_t features;
-    // FEATURES: ['dstport', 'srcport', 'ip.len', 'tcp.window_size_value', 'tcp.hdr_len']
+    // FEATURES: ['dstport', 'srcport', 'tcp.window_size_value', 'ip.ttl', 'tcp.hdr_len', 'ip.len', 'udp.length', 'tcp.flags.ack', 'Max Packet Length']
     table TableFeature0 {
         key = { meta.dst_port: range @name("feature0"); }
         actions = { @defaultonly nop; SetCode0; }
@@ -86,13 +103,13 @@ control InferenceModel(
         const default_action = nop();
     }
     table TableFeature2 {
-        key = { hdr.ipv4.total_length: range @name("feature2"); }
+        key = { features.tcp_window: range @name("feature2"); }
         actions = { @defaultonly nop; SetCode2; }
         size = 1024;
         const default_action = nop();
     }
     table TableFeature3 {
-        key = { features.tcp_window: range @name("feature3"); }
+        key = { hdr.ipv4.ttl: range @name("feature3"); }
         actions = { @defaultonly nop; SetCode3; }
         size = 1024;
         const default_action = nop();
@@ -100,6 +117,30 @@ control InferenceModel(
     table TableFeature4 {
         key = { features.tcp_len: range @name("feature4"); }
         actions = { @defaultonly nop; SetCode4; }
+        size = 1024;
+        const default_action = nop();
+    }
+    table TableFeature5 {
+        key = { hdr.ipv4.total_length: range @name("feature5"); }
+        actions = { @defaultonly nop; SetCode5; }
+        size = 1024;
+        const default_action = nop();
+    }
+    table TableFeature6 {
+        key = { features.udp_len: range @name("feature6"); }
+        actions = { @defaultonly nop; SetCode6; }
+        size = 1024;
+        const default_action = nop();
+    }
+    table TableFeature7 {
+        key = { features.tcp_ack: range @name("feature7"); }
+        actions = { @defaultonly nop; SetCode7; }
+        size = 1024;
+        const default_action = nop();
+    }
+    table TableFeature8 {
+        key = { statefull_features.max_length: range @name("feature8"); }
+        actions = { @defaultonly nop; SetCode8; }
         size = 1024;
         const default_action = nop();
     }
@@ -114,6 +155,10 @@ control InferenceModel(
             codewords.codeword0_2: ternary;
             codewords.codeword0_3: ternary;
             codewords.codeword0_4: ternary;
+            codewords.codeword0_5: ternary;
+            codewords.codeword0_6: ternary;
+            codewords.codeword0_7: ternary;
+            codewords.codeword0_8: ternary;
         }
         actions = { SetClass0; @defaultonly SetClass0ToUnknown; }
         size = 1024;
@@ -124,14 +169,20 @@ control InferenceModel(
     apply {
         if (hdr.ipv4.protocol == IPv4Proto.TCP) { features.tcp_window = hdr.tcp.window; } else { features.tcp_window = 0; }
         if (hdr.ipv4.protocol == IPv4Proto.TCP) { features.tcp_len = hdr.tcp.data_offset; } else { features.tcp_len = 0; }
+        if (hdr.ipv4.protocol == IPv4Proto.UDP) { features.udp_len = hdr.udp.length; } else { features.udp_len = 0; }
+        if (hdr.ipv4.protocol == IPv4Proto.TCP) { features.tcp_ack = hdr.tcp.ack; } else { features.tcp_ack = 0; }
         TableFeature0.apply();
         TableFeature1.apply();
         TableFeature2.apply();
         TableFeature3.apply();
         TableFeature4.apply();
+        TableFeature5.apply();
+        TableFeature6.apply();
+        TableFeature7.apply();
+        TableFeature8.apply();
         CodeTable0.apply();
-        class = class + 0;
-        if (2 == class) { class = UNKNOWN_CLASS; }
+        class = class + 5;
+        if (7 == class) { class = UNKNOWN_CLASS; }
     }
 }
 

@@ -1,0 +1,75 @@
+seeds: in-network n=10, offline n=10
+
+=== OFFLINE macro-F1 (fair = propagation fix), mean ± std ===
+  rf       : 96.09 ± 0.39
+  xgboost  : 96.27 ± 0.19
+  lightgbm : 96.15 ± 0.31
+  catboost : 96.23 ± 0.24
+
+=== OFFLINE macro-F1 (original DUNE regime), mean ± std ===
+  rf       : 96.30 ± 0.26
+  xgboost  : 96.30 ± 0.26
+  lightgbm : 96.30 ± 0.26
+  catboost : 96.29 ± 0.26
+
+=== IN-NETWORK macro-F1 (line topology, fair regime), mean ± std ===
+  rf       : 95.22 ± 0.34   (min 94.57, max 95.63)
+  xgboost  : 95.34 ± 0.56   (min 94.68, max 96.33)
+  lightgbm : 94.64 ± 0.52   (min 93.71, max 95.33)
+  catboost : 95.72 ± 0.86   (min 94.02, max 96.45)
+  spread across models: 1.09 p.p.
+
+=== FIDELITY: offline(fair) vs in-network, paired per seed ===
+  rf       : offline 96.09  in-net 95.22  gap +0.86 ± 0.35 p.p.
+  xgboost  : offline 96.27  in-net 95.34  gap +0.93 ± 0.50 p.p.
+  lightgbm : offline 96.15  in-net 94.64  gap +1.51 ± 0.33 p.p.
+  catboost : offline 96.23  in-net 95.72  gap +0.50 ± 0.80 p.p.
+
+=== TIE TEST: pairwise Wilcoxon on in-network macro (paired by seed) ===
+  rf vs xgboost: median diff +0.16 p.p., p=0.846, p_holm=0.846, rank-biserial=+0.09  (n.s. after Holm)
+  rf vs lightgbm: median diff +0.74 p.p., p=0.049, p_holm=0.195, rank-biserial=+0.71  (n.s. after Holm)
+  rf vs catboost: median diff -0.95 p.p., p=0.160, p_holm=0.480, rank-biserial=-0.53  (n.s. after Holm)
+  xgboost vs lightgbm: median diff +0.81 p.p., p=0.020, p_holm=0.117, rank-biserial=+0.82  (n.s. after Holm)
+  xgboost vs catboost: median diff -0.55 p.p., p=0.193, p_holm=0.480, rank-biserial=-0.49  (n.s. after Holm)
+  lightgbm vs catboost: median diff -1.15 p.p., p=0.037, p_holm=0.186, rank-biserial=-0.75  (n.s. after Holm)
+
+=== FIDELITY significance: offline(fair) vs in-network per model (Wilcoxon) ===
+  rf       : gap +0.86 p.p., p=0.002, rank-biserial=+1.00
+  xgboost  : gap +0.93 p.p., p=0.002, rank-biserial=+1.00
+  lightgbm : gap +1.51 p.p., p=0.002, rank-biserial=+1.00
+  catboost : gap +0.50 p.p., p=0.014, rank-biserial=+0.85
+
+=== TIE TEST: pairwise Wilcoxon on offline fair macro ===
+  rf vs xgboost: median diff -0.10 p.p., p=0.492  (n.s.)
+  rf vs lightgbm: median diff +0.11 p.p., p=1.000  (n.s.)
+  rf vs catboost: median diff -0.08 p.p., p=0.275  (n.s.)
+  xgboost vs lightgbm: median diff +0.05 p.p., p=0.432  (n.s.)
+  xgboost vs catboost: median diff +0.02 p.p., p=0.770  (n.s.)
+  lightgbm vs catboost: median diff -0.03 p.p., p=0.625  (n.s.)
+
+=== COLLISIONS (per-flow register state), mean per model ===
+  rf       : 327
+  xgboost  : 331
+  lightgbm : 323
+  catboost : 334
+
+=== TCAM (offline fair), mean per model ===
+  rf       : 11.46
+  xgboost  : 8.16
+  lightgbm : 7.88
+  catboost : 10.80
+
+=== PARTITION stability (fair): distinct class GROUPINGS per model over seeds ===
+  rf       : 1 distinct; top: {ddos,dos,normal,scanning} {injection} {password} {xss} (10/10)
+  xgboost  : 1 distinct; top: {ddos,dos,normal,scanning} {injection} {password} {xss} (10/10)
+  lightgbm : 1 distinct; top: {ddos,dos,normal,scanning} {injection} {password} {xss} (10/10)
+  catboost : 1 distinct; top: {ddos,dos,normal,scanning} {injection} {password} {xss} (10/10)
+
+=== ddos+dos co-location rate (fair), per model ===
+  rf       : 100% of seeds
+  xgboost  : 100% of seeds
+  lightgbm : 100% of seeds
+  catboost : 100% of seeds
+
+=== IDENTICAL-GROUPING coincidences across models (fair), per seed ===
+  all four identical: 100% of seeds

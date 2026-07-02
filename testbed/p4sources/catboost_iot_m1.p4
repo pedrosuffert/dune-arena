@@ -35,44 +35,30 @@ control GetStatefullFeaturesDefaultValues(out StatefullFeatures_t statefull_feat
 #define INFERENCE_POINT 4
 #define MODEL_ID 1
 
-struct Features_t {
-    bit<16> tcp_window;
-    bit<4> tcp_len;
-}
-
 struct Codewords_t {
-    bit<4> codeword0_0;
-    bit<21> codeword0_1;
-    bit<3> codeword0_2;
-    bit<10> codeword0_3;
-    bit<2> codeword0_4;
+    bit<19> codeword0_0;
+    bit<40> codeword0_1;
+    bit<25> codeword0_2;
 }
 
 control InferenceModel(
     in Headers_t hdr, in Metadata_t meta, in standard_metadata_t std_meta,
     in StatefullFeatures_t statefull_features, out Class_t class) {
 
-    Codewords_t codewords = {0,0,0,0,0};
+    Codewords_t codewords = {0,0,0};
 
-    action SetCode0(bit<4> code0) {
+    action SetCode0(bit<19> code0) {
         codewords.codeword0_0 = code0;
     }
-    action SetCode1(bit<21> code0) {
+    action SetCode1(bit<40> code0) {
         codewords.codeword0_1 = code0;
     }
-    action SetCode2(bit<3> code0) {
+    action SetCode2(bit<25> code0) {
         codewords.codeword0_2 = code0;
-    }
-    action SetCode3(bit<10> code0) {
-        codewords.codeword0_3 = code0;
-    }
-    action SetCode4(bit<2> code0) {
-        codewords.codeword0_4 = code0;
     }
     action nop() {}
 
-    Features_t features;
-    // FEATURES: ['dstport', 'srcport', 'ip.len', 'tcp.window_size_value', 'tcp.hdr_len']
+    // FEATURES: ['dstport', 'srcport', 'ip.len']
     table TableFeature0 {
         key = { meta.dst_port: range @name("feature0"); }
         actions = { @defaultonly nop; SetCode0; }
@@ -91,18 +77,6 @@ control InferenceModel(
         size = 1024;
         const default_action = nop();
     }
-    table TableFeature3 {
-        key = { features.tcp_window: range @name("feature3"); }
-        actions = { @defaultonly nop; SetCode3; }
-        size = 1024;
-        const default_action = nop();
-    }
-    table TableFeature4 {
-        key = { features.tcp_len: range @name("feature4"); }
-        actions = { @defaultonly nop; SetCode4; }
-        size = 1024;
-        const default_action = nop();
-    }
 
     action SetClass0(bit<8> classe) { class = classe; }
     action SetClass0ToUnknown() { class = UNKNOWN_CLASS; }
@@ -112,8 +86,6 @@ control InferenceModel(
             codewords.codeword0_0: ternary;
             codewords.codeword0_1: ternary;
             codewords.codeword0_2: ternary;
-            codewords.codeword0_3: ternary;
-            codewords.codeword0_4: ternary;
         }
         actions = { SetClass0; @defaultonly SetClass0ToUnknown; }
         size = 1024;
@@ -122,16 +94,12 @@ control InferenceModel(
 
 
     apply {
-        if (hdr.ipv4.protocol == IPv4Proto.TCP) { features.tcp_window = hdr.tcp.window; } else { features.tcp_window = 0; }
-        if (hdr.ipv4.protocol == IPv4Proto.TCP) { features.tcp_len = hdr.tcp.data_offset; } else { features.tcp_len = 0; }
         TableFeature0.apply();
         TableFeature1.apply();
         TableFeature2.apply();
-        TableFeature3.apply();
-        TableFeature4.apply();
         CodeTable0.apply();
         class = class + 0;
-        if (2 == class) { class = UNKNOWN_CLASS; }
+        if (5 == class) { class = UNKNOWN_CLASS; }
     }
 }
 
