@@ -75,6 +75,23 @@ wrote them, the bulk of the live pipeline code. My changes are focused:
   generator with generalized n-class majority voting; and one documented `prepare_dataset.py` in
   place of three data-prep scripts.
 
+## Reference environment
+
+Everything in this repo (and every number in the thesis) was produced on a single
+workstation:
+
+| component | version |
+|---|---|
+| OS | Ubuntu 24.04 LTS |
+| CPU / RAM | AMD Ryzen 7 9700X (8c/16t) / 32 GB |
+| BMv2 `simple_switch` | 1.15.1 (via p4-guide install) |
+| `p4c-bm2-ss` | 1.2.5.12 |
+| Python | 3.12 |
+| Python libraries | pinned in `uv.lock` (scikit-learn, xgboost, lightgbm, catboost, shap, ...) |
+
+Offline stages (1-5) need only Python + uv. Stage 6 additionally needs the BMv2
+toolchain and Mininet.
+
 ## Quickstart: reproduce a run
 
 **Prerequisites:** Python ≥ 3.10 and [uv](https://docs.astral.sh/uv/). (Rebuilding features from raw
