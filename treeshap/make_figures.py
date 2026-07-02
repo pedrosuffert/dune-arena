@@ -72,7 +72,7 @@ for i in range(len(CLASSES)):
         ax.text(j, i, f"{v:.2f}", ha="center", va="center",
                 color="white" if v > 0.6 else "black", fontsize=7)
 fig.colorbar(im, label="freq. no mesmo cluster")
-ax.set_title(f"Co-particionamento de classes\n({n_cases} casos: 10 sementes × 4 modelos, regime fair)")
+ax.set_title("")
 save(fig, "fig_coparticionamento.pdf")
 
 # ── Fig: offline vs in-network paired per seed ───────────────────────────────
@@ -90,7 +90,7 @@ for ax, m in zip(axes, MODELS):
     ax.set_title(NICE[m])
 axes[0].set_ylabel("Macro-F1 (%)")
 axes[0].legend(frameon=False, fontsize=7)
-fig.suptitle("Offline (fair) vs in-network (linha BMv2), pareado por semente", y=1.02)
+pass
 save(fig, "fig_offline_vs_innetwork.pdf")
 
 # ── Fig: per-class in-network F1 heatmap (mean over seeds) ───────────────────
@@ -105,7 +105,7 @@ for i in range(len(MODELS)):
     for j in range(len(CLASSES)):
         ax.text(j, i, f"{mat.values[i, j]:.1f}", ha="center", va="center", fontsize=7)
 fig.colorbar(im, label="F1 (%)")
-ax.set_title("F1 por classe, in-network (média de 10 sementes)")
+ax.set_title("")
 save(fig, "fig_f1_por_classe_innetwork.pdf")
 
 # ── Fig: TreeSHAP heatmap per model (mean importance over seeds) ─────────────
@@ -129,7 +129,7 @@ for ax, m in zip(axes.flat, MODELS):
     ax.set_yticks(range(len(CLASSES)), CLASSES, fontsize=7)
     ax.set_xticks(range(len(TOPK)), TOPK, rotation=60, ha="right", fontsize=6.5)
 fig.colorbar(im, ax=axes, label="importância TreeSHAP (normalizada por classe)", shrink=0.8)
-fig.suptitle("Importância TreeSHAP por classe (média de 10 sementes, 12 features principais)")
+pass
 fig.savefig(FIGS / "fig_treeshap_heatmap.pdf", bbox_inches="tight")
 plt.close(fig)
 print("wrote figs/fig_treeshap_heatmap.pdf")

@@ -60,7 +60,9 @@ def offline_row(m):
     per_class = pd.read_csv(perf / "score_per_cluster_per_class_df.csv")
     macro = per_class["Cluster_F1_Score"].mean()
     ci = pd.read_csv(perf / "cluster_info_df.csv", converters={"Class List": ast.literal_eval})
-    tcam = sum(ci["Total_TCAM_Usage"].to_list()[1:])
+    # sum over ALL clusters; DUNE's own [1:] convention skips row 0, which is a
+    # different cluster depending on SPP numbering (the published CSVs used [1:])
+    tcam = sum(ci["Total_TCAM_Usage"].to_list())
     part = " ".join("{" + ",".join(sorted(c)) + "}" for c in ci["Class List"])
     seq = (paths.MODELS / m / "stage5_results/sequence.txt").read_text().strip()
     return macro, tcam, part, seq
