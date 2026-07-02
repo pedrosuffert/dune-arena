@@ -20,6 +20,9 @@ TRAIN_CSV = OUTPUT / "train_7class.csv"
 GT_DIR = Path(os.environ.get(
     "DUNE_FAIR_GT",
     Path.home() / "TON_IoT" / "SecuityEvents_GroundTruth_datasets" / "SecurityEvents_Network_datasets"))
+RAW = Path(os.environ.get(
+    "DUNE_FAIR_RAW",
+    Path.home() / "TON_IoT" / "Raw_datasets" / "network_data" / "Network_dataset_pcaps"))
 
 SPP_SOLVER = ROOT / "model_partitioning" / "src"           # DUNE SPP package lives here now
 

@@ -6,20 +6,17 @@ outputs (``output/train_7class.csv`` and ``stage4/``) and replays the frozen
 this script documents how they were built and lets anyone with the raw TON-IoT
 captures regenerate them.
 
-Why the raw inputs look tangled
--------------------------------
-The raw TON-IoT is distributed so that the two volumetric-DoS captures dominate
-everything else in size. We therefore keep them apart on disk:
+Inputs are produced by ``carve_slim_pcaps.py`` (run after ``build_label_map.py``):
 
 * ``slim_pcaps/``  - the six non-dos classes (ddos, scanning, xss, password,
-  injection, normal), plus a *thin* ``dos.pcap`` that is discarded here.
-* ``dos_only/``    - the real ``dos`` capture (~454 MB). It carries the ``dos``
-  class **and** the benign ``normal`` background used for the test set.
+  injection) plus a clean ``normal.pcap`` carved from TON-IoT's dedicated benign
+  captures (``normal_pcaps``).
+* ``dos_only/``    - the ``dos`` capture, kept apart only because it is large.
 
-So ``dos`` rows come from ``dos_only`` (the thin slim ``dos`` is dropped), and the
-test-set ``normal`` flows are drawn from the ``dos_only`` background. That split is
-a property of the source data, not of the pipeline; the merged output below is a
-single, uniform 7-class dataset.
+``dos`` rows come from ``dos_only``; ``normal`` is a genuine benign class carved
+from ``normal.pcap`` (not attack-capture background). DUNE's Stage-0 datagen turns
+these per-class pcaps into the hybrid feature CSVs read below; the merged output is
+a single, uniform 7-class dataset.
 
 Outputs (under ``paths.OUTPUT`` and ``paths.STAGE4``)
   output/train_7class.csv            - per-flow training rows, 7 classes
@@ -77,7 +74,7 @@ def build_train_and_test():
     dos_df = pd.read_csv(DOS_HYB, dtype=str)
     dos_df = dos_df[dos_df["Label"] == "dos"]
 
-    # drop the thin slim dos rows, splice in the real dos rows
+    # drop any thin slim dos rows, splice in the real dos rows
     slim = slim[slim["Label"] != "dos"]
     df = pd.concat([slim, dos_df], ignore_index=True)
     print("Label dist (rows):")
@@ -162,51 +159,7 @@ def build_train_and_test():
     print(gt_df["type"].value_counts())
 
 
-# ── step 2: add the 'normal' test class from the dos_only background ──────────
-def patch_normal_into_test():
-    # re-seed: the original ran as a separate process, so its shuffle started
-    # from a fresh seed(42). Preserve that to reproduce the same normal flows.
-    random.seed(42)
-    out = paths.OUTPUT
-    out_pcap = out / "ToN_IoT_test.pcap"
-    out_gt = out / "ToN_IoT_Flow_PktCounts.csv"
-    dos_pcap = str(paths.DOS / "dos.pcap")
-
-    train_flows = set(pd.read_csv(paths.TRAIN_CSV, usecols=["Flow ID"])["Flow ID"])
-    dos_hyb = pd.read_csv(DOS_HYB, usecols=["Flow ID", "Label"])
-    norm_flows = dos_hyb[dos_hyb["Label"] == "normal"]["Flow ID"].unique().tolist()
-    norm_flows = [f for f in norm_flows if f not in train_flows]
-    random.shuffle(norm_flows)
-    target = set(norm_flows[:TEST_FLOWS_PER_CLASS])
-    print(f"Target normal test flows: {len(target)}")
-
-    pkts_per_flow = {f: 0 for f in target}
-    writer = PcapWriter(str(out_pcap), linktype=1, append=True, sync=True)
-    print("Scanning dos.pcap for normal background...")
-    for pkt in rdpcap(dos_pcap):
-        fid = flow_id(pkt)
-        if fid not in pkts_per_flow:
-            continue
-        if pkts_per_flow[fid] >= MAX_PKTS_PER_FLOW:
-            continue
-        wrapped = wrap_ethernet(pkt)
-        if wrapped:
-            writer.write(wrapped)
-            pkts_per_flow[fid] += 1
-    writer.close()
-
-    found = {f: c for f, c in pkts_per_flow.items() if c > 0}
-    print(f"Normal flows with packets: {len(found)}")
-    gt = pd.read_csv(out_gt)
-    new_rows = pd.DataFrame([{"Flow ID": f, "type": "normal", "packet_counts": c}
-                             for f, c in found.items()])
-    gt = pd.concat([gt, new_rows], ignore_index=True)
-    gt.to_csv(out_gt, index=False)
-    print(f"Updated GT: {len(gt)} flows")
-    print(gt["type"].value_counts())
-
-
-# ── step 3: build DUNE Stage-4 inputs (train/test hybrids + flow counts, N=4) ─
+# ── step 2: build DUNE Stage-4 inputs (train/test hybrids + flow counts, N=4) ─
 def build_stage4_inputs():
     rb = paths.DATA
     out = rb / "stage4"
@@ -244,7 +197,6 @@ def build_stage4_inputs():
 
 def main():
     build_train_and_test()
-    patch_normal_into_test()
     build_stage4_inputs()
 
 

@@ -1,4 +1,11 @@
 .venv/
+data/
 __pycache__/
 *.pyc
 catboost_info/
+testbed/p4objects/
+testbed/pcaps/
+testbed/logs/
+testbed/experiment_*.tar.gz
+testbed/results_*.txt
+testbed/utils/experiment_pcaps/

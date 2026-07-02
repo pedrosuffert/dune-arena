@@ -1,9 +1,11 @@
 """
-Train RF, XGBoost, LightGBM, CatBoost on DUNE 34-feature data (7 classes).
-Outputs for each model:
-  ~/realbuild/models/<model>/unconstrained_model.sav    (joblib)
-  ~/realbuild/models/<model>/feature_importance.csv     (TreeSHAP)
-  ~/realbuild/models/<model>/metrics.txt
+Train RF, XGBoost, LightGBM, CatBoost on the DUNE 32-feature data (7 classes).
+Outputs for each model (under paths.MODELS):
+  <model>/unconstrained_model.sav    (joblib)
+  <model>/metrics.txt
+
+TreeSHAP importance is NOT computed here: Stage 2 (build_importance.py) computes
+the per-class, normalized matrix the pipeline consumes.
 """
 import pandas as pd
 import numpy as np
@@ -16,7 +18,6 @@ from sklearn.metrics import classification_report, f1_score
 import xgboost as xgb
 import lightgbm as lgb
 import catboost as cb
-import shap
 
 import paths
 import os as _os; SEED = int(_os.environ.get("DUNE_SEED", "42"))
@@ -50,23 +51,10 @@ print(pd.Series(y_raw).value_counts())
 tr_i, va_i = next(GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=SEED).split(X, y, df["Flow ID"].values))
 X_tr, X_val, y_tr, y_val = X[tr_i], X[va_i], y[tr_i], y[va_i]
 
-def save_model(name, clf, X_bg):
+def save_model(name, clf):
     d = MODELS_DIR / name
     d.mkdir(exist_ok=True)
     joblib.dump({"model": clf, "label_encoder": le, "feature_cols": FEATURE_COLS}, d/"unconstrained_model.sav")
-    # TreeSHAP
-    print(f"  [{name}] computing SHAP...")
-    explainer = shap.TreeExplainer(clf)
-    bg = shap.sample(X_bg, min(500, len(X_bg)), random_state=SEED)
-    sv = explainer.shap_values(bg)
-    # sv shape: (samples, features) for binary, (samples, features, classes) for multi
-    if isinstance(sv, list):
-        imp = np.mean([np.abs(v).mean(0) for v in sv], axis=0)
-    else:
-        imp = np.abs(sv).mean(axis=(0, -1)) if sv.ndim == 3 else np.abs(sv).mean(0)
-    fi_df = pd.DataFrame({"feature": FEATURE_COLS, "importance": imp}).sort_values("importance", ascending=False)
-    fi_df.to_csv(d/"feature_importance.csv", index=False)
-    print(fi_df.head(10).to_string())
     # Val metrics
     y_pred = clf.predict(X_val)
     report = classification_report(y_val, y_pred, target_names=classes)
@@ -81,7 +69,7 @@ def save_model(name, clf, X_bg):
 print("\n=== RandomForest ===")
 rf = RandomForestClassifier(n_estimators=100, n_jobs=-1, random_state=SEED)
 rf.fit(X_tr, y_tr)
-save_model("rf", rf, X_tr)
+save_model("rf", rf)
 
 # --- XGBoost ---
 print("\n=== XGBoost ===")
@@ -89,19 +77,19 @@ xgb_clf = xgb.XGBClassifier(n_estimators=100, n_jobs=-1, random_state=SEED,
                               use_label_encoder=False, eval_metric="mlogloss",
                               tree_method="hist")
 xgb_clf.fit(X_tr, y_tr)
-save_model("xgboost", xgb_clf, X_tr)
+save_model("xgboost", xgb_clf)
 
 # --- LightGBM ---
 print("\n=== LightGBM ===")
 lgb_clf = lgb.LGBMClassifier(n_estimators=100, n_jobs=-1, random_state=SEED, verbose=-1)
 lgb_clf.fit(X_tr, y_tr)
-save_model("lightgbm", lgb_clf, X_tr)
+save_model("lightgbm", lgb_clf)
 
 # --- CatBoost ---
 print("\n=== CatBoost ===")
 cb_clf = cb.CatBoostClassifier(iterations=100, random_seed=SEED, verbose=0, thread_count=-1)
 cb_clf.fit(X_tr, y_tr)
-save_model("catboost", cb_clf, X_tr)
+save_model("catboost", cb_clf)
 
 print("\n=== ALL DONE ===")
 for name in ["rf","xgboost","lightgbm","catboost"]:
