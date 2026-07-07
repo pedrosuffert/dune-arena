@@ -1,7 +1,17 @@
-import pandas as pd
 import argparse
 from pprint import pprint
+
+import pandas as pd
 from sklearn.metrics import classification_report
+
+# Class NAMES only. The data plane numbers classes by cluster deploy order,
+# which changes from run to run (sequence and SPP cluster numbering are
+# seed/model dependent), so there is no fixed name -> id list: the id map is
+# derived per run inside compute_classification_report. A previous version
+# hardcoded ids from this list's order, which mislabeled classes whenever the
+# deploy order differed (verified against the 40 archived campaign runs).
+CLASSES = ['ddos', 'dos', 'normal', 'scanning', 'password', 'xss', 'injection']
+
 
 def compute_classification_report(results_df, ground_truth_df, classes):
     # Build flow id
@@ -15,25 +25,30 @@ def compute_classification_report(results_df, ground_truth_df, classes):
     results_df['class'] = results_df['class'].astype(int)
 
     # Merge two dataframes and calculate weight per packet
-    labeled_results_csv = pd.merge(results_df, ground_truth_df, on=['Flow ID'])
+    labeled = pd.merge(results_df, ground_truth_df, on=['Flow ID'])
+    labeled = labeled[labeled['type'].isin(classes)].copy()
+    labeled['weight'] = 1 / labeled['packet_counts']
 
-    # Map class names to integer ids (avoids FutureWarning from replace downcasting)
-    class_mapping = {cls: i + 1 for i, cls in enumerate(classes)}
-    labeled_results_csv = labeled_results_csv[labeled_results_csv['type'].isin(class_mapping)].copy()
-    labeled_results_csv['ground_truth'] = labeled_results_csv['type'].map(class_mapping)
+    # Derive the id -> class map for THIS run: each true class takes the id
+    # holding most of its flow-weighted mass (id 0 = no verdict, never a class).
+    mass = (labeled.pivot_table(index='type', columns='class',
+                                values='weight', aggfunc='sum').fillna(0))
+    ids = [c for c in mass.columns if c != 0]
+    id_of = {t: max(ids, key=lambda i: mass.at[t, i]) for t in mass.index}
+    if len(set(id_of.values())) != len(id_of):
+        raise SystemExit(f'Derived class-id map is not one-to-one: {id_of}. '
+                         'The run is too degenerate to score by majority; inspect it manually.')
+    print(f'Derived class-id map (deploy order): {id_of}')
+    name_of = {v: k for k, v in id_of.items()}
 
-    labeled_results_csv['weight'] = 1 / labeled_results_csv['packet_counts']
+    # Ids outside the map (0 or stray) count as a miss, never as another class
+    labeled['predicted'] = labeled['class'].map(name_of).fillna('none')
 
-    # Keep unique (label, ground_truth) pairs in the same order to use in classification report
-    unique_df = labeled_results_csv.drop_duplicates(subset=["type", "ground_truth"], keep="first")
-
-    # Classification report (silence UndefinedMetricWarning with zero_division=0)
     c_report = classification_report(
-        labeled_results_csv['ground_truth'],
-        labeled_results_csv['class'],
-        labels=unique_df['ground_truth'],
-        target_names=unique_df['type'],
-        sample_weight=labeled_results_csv['weight'],
+        labeled['type'],
+        labeled['predicted'],
+        labels=[t for t in classes if t in mass.index],
+        sample_weight=labeled['weight'],
         output_dict=True,
         zero_division=0,
     )
@@ -49,6 +64,7 @@ def calculate_score(c_report):
         micro_f1 = c_report['accuracy']
     return macro_f1, weighted_f1, micro_f1
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -62,12 +78,11 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    classes = ['ddos', 'dos', 'normal', 'scanning', 'password', 'injection', 'xss']
     results_df = pd.read_csv(args.results, index_col=None)
     print(f"Collision count: {results_df['collision'].sum()}")
     ground_truth_df = pd.read_csv(args.ground_truth).drop(columns=['Unnamed: 0'], errors='ignore')
 
-    c_report = compute_classification_report(results_df, ground_truth_df, classes)
+    c_report = compute_classification_report(results_df, ground_truth_df, CLASSES)
     pprint(c_report)
 
     macro_f1, weighted_f1, micro_f1 = calculate_score(c_report)
